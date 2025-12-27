@@ -9,92 +9,91 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 load_dotenv()
 
-# 1. CONFIGURACIÓN (Mantenemos gemini-3-flash-preview)
+# 1. CONFIGURACIÓN
 llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", temperature=0.1)
 embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+DB_DIR = "./chroma_db"
+HISTORIAL_FILE = "historial_resumido.txt"
 
-# 2. CARGA DE DOCUMENTOS
+# 2. CARGA DE DOCUMENTOS (Mantenemos tu lógica estable)
 loader = PyPDFDirectoryLoader("documentos/")
 documentos_crudos = loader.load()
-DB_DIR = "./chroma_db"
 
 if len(documentos_crudos) > 0:
-    print(f"📄 Se han encontrado {len(documentos_crudos)} páginas nuevas.")
-    # Ajuste de precisión que ya te funcionó
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=250)
     fragmentos = text_splitter.split_documents(documentos_crudos)
-    
     if os.path.exists(DB_DIR):
         vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
         vectorstore.add_documents(fragmentos)
     else:
         vectorstore = Chroma.from_documents(documents=fragmentos, embedding=embeddings, persist_directory=DB_DIR)
-
-    # Lógica de archivado
+    
+    # Archivados
     procesados_path = "documentos/procesados"
     if not os.path.exists(procesados_path): os.makedirs(procesados_path)
     for archivo in os.listdir("documentos/"):
         if archivo.endswith(".pdf"):
             shutil.move(os.path.join("documentos", archivo), os.path.join(procesados_path, archivo))
-    print("📂 PDFs archivados en 'procesados'.")
 else:
-    if os.path.exists(DB_DIR):
-        vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
-    else:
-        print("❌ Error: Sin documentos ni base de datos."); exit()
+    vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
 
-# --- 5. BUCLE DE CHAT CON HISTORIAL ---
-print("\n--- 🤖 Analista con Memoria de Chat listo ---")
-historial = []  # Lista para guardar el contexto de la conversación
+# --- 3. LÓGICA DE MEMORIA RESUMIDA PERSISTENTE ---
+def cargar_memoria_previa():
+    if os.path.exists(HISTORIAL_FILE):
+        with open(HISTORIAL_FILE, "r", encoding="utf-8") as f:
+            return f.read()
+    return "No hay conversaciones previas."
+
+def guardar_resumen(nuevo_resumen):
+    with open(HISTORIAL_FILE, "w", encoding="utf-8") as f:
+        f.write(nuevo_resumen)
+
+# Cargamos lo que recordamos de sesiones anteriores
+resumen_historico = cargar_memoria_previa()
+ventana_chat = [] # Chat activo de la sesión
+
+print("\n--- 🤖 Analista con Memoria Persistente ---")
+print(f"🧠 Recuerdo anterior: {resumen_historico[:100]}...")
 
 while True:
     try:
         pregunta = input("\n👤 Tu pregunta: ")
-        if pregunta.lower() in ['salir', 'exit', 'quit']: break
+        if pregunta.lower() in ['salir', 'exit', 'quit']:
+            # ANTES DE SALIR: Resumimos la sesión para la próxima vez
+            print("📝 Resumiendo conversación para el próximo inicio...")
+            prompt_resumen = f"Resume en 3 líneas los puntos clave de esta charla para recordarlos luego: {str(ventana_chat)}"
+            resumen_final = llm.invoke(prompt_resumen).content
+            guardar_resumen(f"Contexto previo: {resumen_final}")
+            break
 
-        # Búsqueda en los PDFs (k=15 para no perder datos)
         docs_relevantes = vectorstore.similarity_search(pregunta, k=15)
         contexto_pdfs = "\n\n".join([doc.page_content for doc in docs_relevantes])
 
-        # Construimos el bloque de historial para el prompt (últimos 6 mensajes)
-        texto_historial = ""
-        for msg in historial[-6:]:
-            autor = "Usuario" if isinstance(msg, HumanMessage) else "IA"
-            texto_historial += f"{autor}: {msg.content}\n"
+        # Construimos historial de la sesión actual
+        chat_actual = "\n".join([f"{'Usuario' if isinstance(m, HumanMessage) else 'IA'}: {m.content}" for m in ventana_chat[-4:]])
 
         prompt = f"""
-        ERES UN AUDITOR CONTABLE QUE RECUERDA LA CONVERSACIÓN.
+        ERES UN AUDITOR CONTABLE.
         
-        HISTORIAL RECIENTE:
-        {texto_historial}
+        LO QUE RECORDAMOS DE DÍAS ANTERIORES:
+        {resumen_historico}
         
-        CONTEXTO DE LOS PDFS:
+        LO QUE HABLAMOS RECIÉN:
+        {chat_actual}
+        
+        DATOS DE LOS PDFS:
         {contexto_pdfs}
 
-        NUEVA PREGUNTA: {pregunta}
-        
-        REGLAS:
-        1. Usa el historial para entender referencias como "ese gasto", "el mes anterior" o "¿quién es el titular?".
-        2. Si la información no está en el historial, búscala en el contexto de los PDFs.
-        3. Mantén el detalle de auditoría (fechas y montos individuales).
+        PREGUNTA: {pregunta}
         """
         
         response = llm.invoke(prompt)
-        
-        # Limpieza de respuesta (evita corchetes/firmas)
-        if hasattr(response, 'content'):
-            if isinstance(response.content, list):
-                respuesta_final = "".join([b['text'] for b in response.content if 'text' in b])
-            else:
-                respuesta_final = response.content
-        else:
-            respuesta_final = str(response)
+        respuesta_final = response.content if not isinstance(response.content, list) else "".join([b['text'] for b in response.content if 'text' in b])
 
         print(f"\n🤖 IA:\n{respuesta_final}")
 
-        # Guardamos la interacción en el historial
-        historial.append(HumanMessage(content=pregunta))
-        historial.append(AIMessage(content=respuesta_final))
+        ventana_chat.append(HumanMessage(content=pregunta))
+        ventana_chat.append(AIMessage(content=respuesta_final))
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
