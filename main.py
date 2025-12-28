@@ -12,7 +12,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 load_dotenv()
 
 # 1. CONFIGURACIÓN DE LLAVE Y RUTAS
-API_KEY = os.getenv("GOOGLE_API_KEY_1")
+API_KEY = os.getenv("GOOGLE_API_KEY_2")
 DB_DIR = "./chroma_db"
 HISTORIAL_FILE = "historial_resumido.txt"
 DOCS_PATH = "documentos"
