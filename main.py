@@ -75,7 +75,7 @@ else:
 # 3. FUNCIONES CORE (Sin cambios, manteniendo k=15 y prompt limpio)
 def consultar_auditor(mensaje, historial):
     try:
-        docs = vectorstore.similarity_search(mensaje, k=15)
+        docs = vectorstore.similarity_search(mensaje, k=30)
         contexto = "\n".join([d.page_content for d in docs])
     except:
         contexto = "No se pudo leer la base de datos."
@@ -92,7 +92,7 @@ Pregunta: {mensaje}"""
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, json=payload, timeout=60)
         res_data = response.json()
         
         if "candidates" in res_data:
