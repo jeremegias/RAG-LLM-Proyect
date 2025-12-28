@@ -82,8 +82,8 @@ def consultar_auditor(mensaje, historial):
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={API_KEY}"
     
-    prompt = f"""Actúa como auditor contable experto. Se inclusivo por defecto si hay por proximidad en el rubro y usa las notas para advertir. 
-Verifica que los consumos unicamente tengan distinto número de comprobante evitar repetición. 
+    prompt = f"""Actúa como auditor contable experto. Se inclusivo por defecto si hay proximidad en el rubro y usa las notas para advertir. 
+Verifica que los consumos tengan distinto número de comprobante para evitar repetición. 
 Usa este contexto de PDFs para responder:
 {contexto}
 
