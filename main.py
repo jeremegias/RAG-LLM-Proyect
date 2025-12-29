@@ -76,7 +76,15 @@ else:
 def consultar_auditor(mensaje, historial):
     try:
         docs = vectorstore.similarity_search(mensaje, k=30)
-        contexto = "\n".join([d.page_content for d in docs])
+        contexto_lista = []
+        for d in docs:
+            # Extraemos el metadato 'source' que Chroma ya tiene guardado
+            fuente = os.path.basename(d.metadata.get('source', 'Archivo desconocido'))
+            # Creamos un bloque que vincula el origen con el texto
+            bloque = f"DOCUMENTO: {fuente}\nCONTENIDO: {d.page_content}"
+            contexto_lista.append(bloque)
+        
+        contexto = "\n\n---\n\n".join(contexto_lista)
     except:
         contexto = "No se pudo leer la base de datos."
     
