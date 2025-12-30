@@ -78,26 +78,43 @@ def consultar_auditor(mensaje, historial):
         docs = vectorstore.similarity_search(mensaje, k=30)
         contexto_lista = []
         for d in docs:
-            # Extraemos el metadato 'source' que Chroma ya tiene guardado
             fuente = os.path.basename(d.metadata.get('source', 'Archivo desconocido'))
-            # Creamos un bloque que vincula el origen con el texto
             bloque = f"DOCUMENTO: {fuente}\nCONTENIDO: {d.page_content}"
             contexto_lista.append(bloque)
-        
         contexto = "\n\n---\n\n".join(contexto_lista)
     except:
         contexto = "No se pudo leer la base de datos."
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={API_KEY}"
     
-    prompt = f"""Actúa como auditor contable experto. Se inclusivo por defecto si hay proximidad en el rubro y usa las notas para advertir. 
+# 1. TRADUCCIÓN DEL HISTORIAL (Formato ultra-plano)
+    historial_google = []
+    for m in historial:
+        rol = "user" if m["role"] == "user" else "model"
+        # Aseguramos que el contenido sea string puro
+        texto_limpio = str(m["content"]) 
+        historial_google.append({
+            "role": rol, 
+            "parts": [{"text": texto_limpio}]
+        })
+    
+    # 2. TU PROMPT ORIGINAL (INTACTO)
+    prompt_final = f"""Actúa como auditor contable experto. Se inclusivo por defecto si hay proximidad en el rubro y usa las notas para advertir. 
 Verifica que los consumos tengan distinto número de comprobante para evitar repetición. 
 Usa este contexto de PDFs para responder:
 {contexto}
 
 Pregunta: {mensaje}"""
 
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    # 3. EL PAYLOAD (Estructura definitiva para evitar el error de JSON)
+    payload = {
+        "contents": historial_google + [
+            {
+                "role": "user", 
+                "parts": [{"text": prompt_final}]
+            }
+        ]
+    }
     
     try:
         response = requests.post(url, json=payload, timeout=60)
@@ -110,11 +127,10 @@ Pregunta: {mensaje}"""
                 f.write(f"\n\n### {fecha}\n**Consulta:** {mensaje}\n")
             return respuesta
         else:
-            error_msg = res_data.get('error', {}).get('message', 'Error de cuota')
-            return f"⚠️ Google dice: {error_msg}. Espera 30 segundos y reintenta."
+            error_msg = res_data.get('error', {}).get('message', 'Error de cuota o saturación')
+            return f"⚠️ Google dice: {error_msg}. Reintenta en unos segundos."
     except Exception as e:
         return f"❌ Error de conexión: {str(e)}"
-
 def leer_historial():
     if os.path.exists(HISTORIAL_FILE):
         with open(HISTORIAL_FILE, "r", encoding="utf-8") as f:
